@@ -8,12 +8,12 @@ import java.util.HashMap;
 import java.util.List;
 
 public final class Lexer {
-    private BufferedInputStream in;
+    private final BufferedInputStream in;
 
-    private List<Token> tokens = new ArrayList<>();
+    private final List<Token> tokens = new ArrayList<>();
 
-    private State state;
-    private State.StringEscape stringEscapeState;
+    private State state = State.INITIAL;
+    private State.StringEscape stringEscapeState = State.StringEscape.NONE;
     private int rawStringHashCount = 0;
     private int rawStringEndHashCount = 0;
     private int nestedCommentDepth = 0; //block comments can be nested
@@ -23,8 +23,8 @@ public final class Lexer {
     private int bufferStartLine;
     private int bufferStartColumn;
 
-    private int line;
-    private int column;
+    private int line = 0;
+    private int column = 0;
 
     private static final HashMap<String, TokenType> KEYWORDS = new HashMap<>();
 
@@ -91,18 +91,27 @@ public final class Lexer {
     }
 
     public List<Token> parse() throws IOException {
+        char c = 0;
         while (true) {
-            int read = in.read();
-            if (read < 0)
-                return tokens;
-
-            char c = (char) read;
             if (c == '\n') {
                 line++;
                 column = 0;
             } else {
                 column++;
             }
+
+            int read = in.read();
+            if (read < 0) {
+                //make sure to end with EOL
+                if (c != '\n')
+                    c = '\n';
+                else
+                    return tokens;
+            } else {
+                c = (char) read;
+            }
+
+            System.err.printf("%d:%d '%s' %s %s\n", line, column, c, state, stringEscapeState);
 
             switch (state) {
                 case INITIAL -> initialState(c);
@@ -139,6 +148,22 @@ public final class Lexer {
                 case COMMENT_LINE_MAYBE_OUTER_DOC_START -> commentLineMaybeOuterDocStart(c);
                 case COMMENT_LINE_INNER_DOC -> commentLine(c, TokenType.COMMENT_INNER_DOC);
                 case COMMENT_LINE_OUTER_DOC -> commentLine(c, TokenType.COMMENT_OUTER_DOC);
+                case PLUS -> plus(c);
+                case MINUS -> minus(c);
+                case STAR -> star(c);
+                case PERCENT -> percent(c);
+                case CARET -> caret(c);
+                case NOT -> not(c);
+                case AND -> and(c);
+                case OR -> or(c);
+                case LT -> lessThan(c);
+                case GT -> greaterThan(c);
+                case SHL -> shiftLeft(c);
+                case SHR -> shiftRight(c);
+                case EQ -> equals(c);
+                case DOT -> dot(c);
+                case DOT_DOT -> dotDot(c);
+                case COLON -> colon(c);
             }
         }
     }
@@ -170,7 +195,7 @@ public final class Lexer {
     }
 
     private void addAndReset(TokenType type) {
-        tokens.add(new Token(bufferStartLine, bufferStartColumn, type, buffer.toString()));
+        addAndReset(type, buffer.toString());
     }
 
     private void errorAndReset(String errorMessage) {
@@ -196,8 +221,58 @@ public final class Lexer {
             startBufferAndSet(c, State.NUMBER_LITERAL);
         } else if (c == '/') {
             startBufferAndSet(c, State.SLASH);
+        } else if (c == '+') {
+            startBufferAndSet(c, State.PLUS);
+        } else if (c == '-') {
+            startBufferAndSet(c, State.MINUS);
+        } else if (c == '*') {
+            startBufferAndSet(c, State.STAR);
+        } else if (c == '%') {
+            startBufferAndSet(c, State.PERCENT);
+        } else if (c == '^') {
+            startBufferAndSet(c, State.CARET);
+        } else if (c == '!') {
+            startBufferAndSet(c, State.NOT);
+        } else if (c == '&') {
+            startBufferAndSet(c, State.AND);
+        } else if (c == '|') {
+            startBufferAndSet(c, State.OR);
+        } else if (c == '<') {
+            startBufferAndSet(c, State.LT);
+        } else if (c == '>') {
+            startBufferAndSet(c, State.GT);
+        } else if (c == '=') {
+            startBufferAndSet(c, State.EQ);
+        } else if (c == '.') {
+            startBufferAndSet(c, State.DOT);
+        } else if (c == ':') {
+            startBufferAndSet(c, State.COLON);
+        } else if (c == '@') {
+            addEmptyAndReset(TokenType.AT);
+        } else if (c == ',') {
+            addEmptyAndReset(TokenType.COMMA);
+        } else if (c == ';') {
+            addEmptyAndReset(TokenType.SEMICOLON);
+        } else if (c == '#') {
+            addEmptyAndReset(TokenType.POUND);
+        } else if (c == '$') {
+            addEmptyAndReset(TokenType.DOLLAR);
+        } else if (c == '?') {
+            addEmptyAndReset(TokenType.QUESTION);
+        } else if (c == '(') {
+            addEmptyAndReset(TokenType.PAREN_L);
+        } else if (c == ')') {
+            addEmptyAndReset(TokenType.PAREN_R);
+        } else if (c == '[') {
+            addEmptyAndReset(TokenType.SQUARE_L);
+        } else if (c == ']') {
+            addEmptyAndReset(TokenType.SQUARE_R);
+        } else if (c == '{') {
+            addEmptyAndReset(TokenType.CURLY_L);
+        } else if (c == '}') {
+            addEmptyAndReset(TokenType.CURLY_R);
         } else if (!Character.isWhitespace(c)) {
-            startBufferAndSet(c, State.PUNCTUATION);
+            errorAndReset("Unexpected symbol: " + c);
         }
     }
 
@@ -314,16 +389,6 @@ public final class Lexer {
             boolean isAscii,
             boolean allowUnicodeEscape
     ) {
-//        if (c == '\\') {
-//            buffer.append(c);
-//            if (stringEscapeState == LexerState.StringEscape.SLASH)
-//                stringEscapeState = LexerState.StringEscape.NONE;
-//            else if (stringEscapeState == LexerState.StringEscape.NONE)
-//                stringEscapeState = LexerState.StringEscape.SLASH;
-//            else
-//                addWithData(TokenType.ERROR, "Unexpected slash in literal escape sequence");
-//            return;
-//        }
         switch (stringEscapeState) {
             case NONE -> escapeNone(c);
             case SLASH -> escapeSlash(c, allowUnicodeEscape);
@@ -356,9 +421,10 @@ public final class Lexer {
                 stringEscapeState = State.StringEscape.NONE;
             }
             case '\n' -> {
-                if (state != State.STRING_LITERAL) {
-                    errorAndReset("Backslash before newline is only possible in string literals.");
+                if (state == State.STRING_LITERAL) {
                     stringEscapeState = State.StringEscape.NONE;
+                } else {
+                    errorAndReset("Backslash before newline is only possible in string literals.");
                 }
             }
             case 'x' -> {
@@ -378,19 +444,19 @@ public final class Lexer {
     private void escapeAsciiOrByte(char c, boolean isAscii) {
         if (buffer.charAt(buffer.length() - 1) == 'x') {
             buffer.append(c);
-            if (isHexDigit(c)) {
+            if (!(c >= '0' && c <= '7') && isHexDigit(c)) {
                 if (!isAscii) {
-                    errorAndReset("Unexpected 7 (ASCII escape sequence character code can't be higher than 7F)");
+                    errorAndReset("Unexpected " + c + " (ASCII escape sequence character code can't be higher than 7F)");
                     stringEscapeState = State.StringEscape.NONE;
                 }
-            } else if (!(c >= '0' && c <= '7')) {
-                errorAndReset("Unexpected symbol in hex character code.");
+            } else {
+                errorAndReset("Unexpected symbol in hex character code: " + c);
                 stringEscapeState = State.StringEscape.NONE;
             }
         } else if (buffer.charAt(buffer.length() - 2) == 'x') {
             buffer.append(c);
             if (!isHexDigit(c)) {
-                errorAndReset("Unexpected symbol in hex character code.");
+                errorAndReset("Unexpected symbol in hex character code: " + c);
                 stringEscapeState = State.StringEscape.NONE;
             }
         } else {
@@ -401,7 +467,7 @@ public final class Lexer {
 
     private void escapeUnicode(char c) {
         buffer.append(c);
-        if (buffer.charAt(buffer.length() - 1) == 'u') {
+        if (buffer.charAt(buffer.length() - 2) == 'u') {
             if (c != '{') {
                 errorAndReset("Unicode escape sequence must start with {");
                 stringEscapeState = State.StringEscape.NONE;
@@ -419,7 +485,7 @@ public final class Lexer {
             } else if (c == '}') {
                 stringEscapeState = State.StringEscape.NONE;
             } else {
-                errorAndReset("Unexpected symbol in hex character code.");
+                errorAndReset("Unexpected symbol in Unicode hex character code: " + c);
                 stringEscapeState = State.StringEscape.NONE;
             }
         }
@@ -432,7 +498,7 @@ public final class Lexer {
         } else if (c == '"') {
             state = State.RAW_STRING_LITERAL;
         } else {
-            errorAndReset("Unexpected character at start of raw string, expected \" or #");
+            errorAndReset("Unexpected character at start of raw string: " + c + " (expected \" or #)");
             rawStringHashCount = 0;
         }
     }
@@ -708,5 +774,159 @@ public final class Lexer {
         }
     }
 
-    private void 
+    private void plus(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.PLUS_EQ);
+        } else {
+            addEmptyAndReset(TokenType.PLUS);
+            initialState(c);
+        }
+    }
+
+    private void minus(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.MINUS_EQ);
+        } else if (c == '>') {
+                addEmptyAndReset(TokenType.R_ARROW);
+        } else {
+            addEmptyAndReset(TokenType.MINUS);
+            initialState(c);
+        }
+    }
+
+    private void star(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.STAR_EQ);
+        } else {
+            addEmptyAndReset(TokenType.STAR);
+            initialState(c);
+        }
+    }
+
+    private void percent(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.PERCENT_EQ);
+        } else {
+            addEmptyAndReset(TokenType.PERCENT);
+            initialState(c);
+        }
+    }
+
+    private void caret(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.CARET_EQ);
+        } else {
+            addEmptyAndReset(TokenType.CARET);
+            initialState(c);
+        }
+    }
+
+    private void not(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.NE);
+        } else {
+            addEmptyAndReset(TokenType.NOT);
+            initialState(c);
+        }
+    }
+
+    private void and(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.AND_EQ);
+        } else if (c == '&') {
+            addEmptyAndReset(TokenType.AND_AND);
+        } else {
+            addEmptyAndReset(TokenType.AND);
+            initialState(c);
+        }
+    }
+
+    private void or(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.OR_EQ);
+        } else {
+            addEmptyAndReset(TokenType.OR);
+            initialState(c);
+        }
+    }
+
+    private void lessThan(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.LE);
+        } else if (c == '<') {
+            state = State.SHL;
+        } else {
+            addEmptyAndReset(TokenType.LT);
+            initialState(c);
+        }
+    }
+
+    private void greaterThan(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.GE);
+        } else if (c == '>') {
+            state = State.SHR;
+        } else {
+            addEmptyAndReset(TokenType.GT);
+            initialState(c);
+        }
+    }
+
+    private void shiftLeft(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.SHL_EQ);
+        } else {
+            addEmptyAndReset(TokenType.SHL);
+            initialState(c);
+        }
+    }
+
+    private void shiftRight(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.SHR_EQ);
+        } else {
+            addEmptyAndReset(TokenType.SHR);
+            initialState(c);
+        }
+    }
+
+    private void equals(char c) {
+        if (c == '=') {
+            addEmptyAndReset(TokenType.EQ_EQ);
+        } else if (c == '>') {
+            addEmptyAndReset(TokenType.FAT_ARROW);
+        } else {
+            addEmptyAndReset(TokenType.EQ);
+            initialState(c);
+        }
+    }
+
+    private void dot(char c) {
+        if (c == '.') {
+            state = State.DOT_DOT;
+        } else {
+            addEmptyAndReset(TokenType.DOT);
+            initialState(c);
+        }
+    }
+
+    private void dotDot(char c) {
+        if (c == '.') {
+            addEmptyAndReset(TokenType.DOT_DOT_DOT);
+        } else if (c == '=') {
+            addEmptyAndReset(TokenType.DOT_DOT_EQ);
+        } else {
+            addEmptyAndReset(TokenType.DOT_DOT);
+            initialState(c);
+        }
+    }
+
+    private void colon(char c) {
+        if (c == ':') {
+            addEmptyAndReset(TokenType.PATH_SEPARATOR);
+        } else {
+            addEmptyAndReset(TokenType.COLON);
+            initialState(c);
+        }
+    }
 }

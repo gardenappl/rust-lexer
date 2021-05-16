@@ -471,7 +471,7 @@ fn write_html(output_dir: &Path, max_slice_index: usize, svg_files: &[String], i
                 "<input id=\"slice_toggle{}\" \
                         type=\"checkbox\" \
                         onchange=\"update_slice_visibility({})\" \
-                        checked=\"checked\" />\n\
+                        \\\\c\"hecked=\"checked\" />\n\
                 <label for=\"slice_toggle{}\">{}</label>\n",
                 ix,
                 max_slice_index + 1,

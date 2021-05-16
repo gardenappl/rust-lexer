@@ -26,7 +26,6 @@ enum State {
     FLOAT_LITERAL_DOT,
     FLOAT_LITERAL_EXPONENT,
     FLOAT_LITERAL_EXPONENT_START,
-    SLASH,
     COMMENT_BLOCK,
     COMMENT_BLOCK_START,
     COMMENT_BLOCK_MAYBE_OUTER_DOC_START,
@@ -37,7 +36,23 @@ enum State {
     COMMENT_LINE_MAYBE_OUTER_DOC_START,
     COMMENT_LINE_INNER_DOC,
     COMMENT_LINE_OUTER_DOC,
-    PUNCTUATION;
+    SLASH,
+    PLUS,
+    MINUS,
+    STAR,
+    PERCENT,
+    CARET,
+    NOT,
+    AND,
+    OR,
+    LT,
+    GT,
+    SHL,
+    SHR,
+    EQ,
+    DOT,
+    DOT_DOT,
+    COLON;
 
     enum StringEscape {
         NONE,
