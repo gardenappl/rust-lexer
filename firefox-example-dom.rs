@@ -51,7 +51,7 @@ pub struct Slice {
 }
 
 
-/**** /*** /** */ /*! TEST INTEGERS */ */ /**/ */
+/**** /*** /** */ /*! TEST COMMENTS */ */ /**/ */
 
 
                                           /*! /** TEST STRINGS */

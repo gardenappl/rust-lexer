@@ -15,6 +15,9 @@ import static org.fusesource.jansi.Ansi.ansi;
 
 public class Main {
     public static void main(String[] args) throws IOException {
+        //Might be necessary to get colored output in IntelliJ IDEA console
+//        System.setProperty(AnsiConsole.JANSI_MODE, AnsiConsole.JANSI_MODE_FORCE);
+
         byte[] file = Files.readAllBytes(Path.of(args[0]));
         ByteArrayInputStream stream = new ByteArrayInputStream(file);
         Lexer lexer = new Lexer(stream);
