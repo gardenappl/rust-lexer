@@ -21,6 +21,6 @@ Options for output:
 
 ### It works!
 
-[!test-strings.png](Test strings)
-[!test-numbers.png](Test numbers)
-[!firefox.png](Firefox)
+![Strings and comments](test-strings.png)
+![Numbers](test-numbers.png)
+![Firefox](firefox.png)
