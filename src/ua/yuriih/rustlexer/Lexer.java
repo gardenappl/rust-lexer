@@ -1,6 +1,5 @@
 package ua.yuriih.rustlexer;
 
-import javax.management.InstanceNotFoundException;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -111,7 +110,9 @@ public final class Lexer {
                 c = (char) read;
             }
 
-            System.err.printf("%d:%d '%s' %s %s\n", line, column, c, state, stringEscapeState);
+            System.err.printf("%d:%d '%s' %s %s %d,%d %d(%s)\n", line, column, c, state,
+                    stringEscapeState, rawStringHashCount, rawStringEndHashCount,
+                    nestedCommentDepth, outerCommentState);
 
             switch (state) {
                 case INITIAL -> initialState(c);
@@ -131,12 +132,13 @@ public final class Lexer {
                 case INT_LITERAL_HEX -> intLiteralHex(c);
                 case INT_LITERAL_OCT -> intLiteralOct(c);
                 case INT_LITERAL_BIN -> intLiteralBin(c);
-                case INT_LITERAL_HEX_START -> intLiteralHexStart(c);
-                case INT_LITERAL_OCT_START -> intLiteralOctStart(c);
-                case INT_LITERAL_BIN_START -> intLiteralBinStart(c);
+                case INT_LITERAL_HEX_NO_DIGITS -> intLiteralHexNoDigits(c);
+                case INT_LITERAL_OCT_NO_DIGITS -> intLiteralOctNoDigits(c);
+                case INT_LITERAL_BIN_NO_DIGITS -> intLiteralBinNoDigits(c);
                 case FLOAT_LITERAL_DOT -> floatLiteralDot(c);
                 case FLOAT_LITERAL_EXPONENT -> floatLiteralExponent(c);
                 case FLOAT_LITERAL_EXPONENT_START -> floatLiteralExponentStart(c);
+                case FLOAT_LITERAL_EXPONENT_NO_DIGITS -> floatLiteralExponentNoDigits(c);
                 case SLASH -> slash(c);
                 case COMMENT_BLOCK -> commentBlock(c, TokenType.COMMENT);
                 case COMMENT_BLOCK_START -> commentBlockStart(c);
@@ -205,8 +207,6 @@ public final class Lexer {
     private void initialState(char c) {
         if (c == '_') {
             startBufferAndSet(c, State.ID_OR_UNDERSCORE);
-        } else if (isIdentifierChar(c)) {
-            startBufferAndSet(c, State.ID_OR_KEYWORD_OR_SUFFIX);
         } else if (c == 'r') {
             startBufferAndSet(c, State.MAYBE_RAW_STRING);
         } else if (c == '"') {
@@ -219,6 +219,8 @@ public final class Lexer {
             startBufferAndSet(c, State.NUMBER_LITERAL_START_ZERO);
         } else if (c >= '1' && c <= '9') {
             startBufferAndSet(c, State.NUMBER_LITERAL);
+        } else if (isIdentifierChar(c)) {
+            startBufferAndSet(c, State.ID_OR_KEYWORD_OR_SUFFIX);
         } else if (c == '/') {
             startBufferAndSet(c, State.SLASH);
         } else if (c == '+') {
@@ -445,7 +447,7 @@ public final class Lexer {
         if (buffer.charAt(buffer.length() - 1) == 'x') {
             buffer.append(c);
             if (!(c >= '0' && c <= '7') && isHexDigit(c)) {
-                if (!isAscii) {
+                if (isAscii) {
                     errorAndReset("Unexpected " + c + " (ASCII escape sequence character code can't be higher than 7F)");
                     stringEscapeState = State.StringEscape.NONE;
                 }
@@ -512,6 +514,7 @@ public final class Lexer {
 
     private void rawStringLiteralMaybeEnd(char c) {
         if (rawStringEndHashCount == rawStringHashCount) {
+            rawStringHashCount = 0;
             rawStringEndHashCount = 0;
 
             TokenType type;
@@ -527,6 +530,8 @@ public final class Lexer {
             rawStringEndHashCount++;
             buffer.append(c);
         } else {
+            rawStringHashCount = 0;
+            rawStringEndHashCount = 0;
             state = State.RAW_STRING_LITERAL;
             buffer.append(c);
         }
@@ -535,13 +540,13 @@ public final class Lexer {
     private void numberLiteralStartZero(char c) {
         if (c == 'x') {
             buffer.append(c);
-            state = State.INT_LITERAL_HEX_START;
+            state = State.INT_LITERAL_HEX_NO_DIGITS;
         } else if (c == 'o') {
             buffer.append(c);
-            state = State.INT_LITERAL_OCT_START;
+            state = State.INT_LITERAL_OCT_NO_DIGITS;
         } else if (c == 'b') {
             buffer.append(c);
-            state = State.INT_LITERAL_BIN_START;
+            state = State.INT_LITERAL_BIN_NO_DIGITS;
         } else {
             state = State.NUMBER_LITERAL;
             numberLiteral(c);
@@ -551,7 +556,7 @@ public final class Lexer {
     private void numberLiteral(char c) {
         if (c == 'E') {
             buffer.append(c);
-            state = State.FLOAT_LITERAL_EXPONENT;
+            state = State.FLOAT_LITERAL_EXPONENT_START;
         } else if (c == '.') {
             buffer.append(c);
             state = State.FLOAT_LITERAL_DOT;
@@ -590,7 +595,7 @@ public final class Lexer {
         }
     }
 
-    private void intLiteralHexStart(char c) {
+    private void intLiteralHexNoDigits(char c) {
         if (isHexDigit(c)) {
             buffer.append(c);
             state = State.INT_LITERAL_HEX;
@@ -602,7 +607,7 @@ public final class Lexer {
         }
     }
 
-    private void intLiteralOctStart(char c) {
+    private void intLiteralOctNoDigits(char c) {
         if (c >= '0' && c <= '9') {
             buffer.append(c);
             state = State.INT_LITERAL_OCT;
@@ -614,7 +619,7 @@ public final class Lexer {
         }
     }
 
-    private void intLiteralBinStart(char c) {
+    private void intLiteralBinNoDigits(char c) {
         if (c == '0' || c == '1') {
             buffer.append(c);
             state = State.INT_LITERAL_BIN;
@@ -638,39 +643,33 @@ public final class Lexer {
         }
     }
 
-    private void floatLiteralExponent(char c) {
+    private void floatLiteralExponentStart(char c) {
         if (c == '+' || c == '-') {
-            char lastChar = buffer.charAt(buffer.length() - 1);
-            if (lastChar == 'e' || lastChar == 'E') {
-                buffer.append(c);
-            } else {
-                addAndReset(TokenType.FLOAT_LITERAL);
-                initialState(c);
-            }
-        } else if ((c >= '0' && c <= '9') || c == '_') {
             buffer.append(c);
+            state = State.FLOAT_LITERAL_EXPONENT_NO_DIGITS;
         } else {
-            addAndReset(TokenType.FLOAT_LITERAL);
+            errorAndReset("Expected + or - at the start of exponent");
             initialState(c);
         }
     }
 
-    private void floatLiteralExponentStart(char c) {
-        if (c == '+' || c == '-') {
-            char lastChar = buffer.charAt(buffer.length() - 1);
-            if (lastChar == 'e' || lastChar == 'E') {
-                buffer.append(c);
-            } else {
-                errorAndReset("Exponent should have at least one digit");
-                initialState(c);
-            }
-        } else if (c == '_') {
+    private void floatLiteralExponentNoDigits(char c) {
+        if (c == '_') {
             buffer.append(c);
         } else if (c >= '0' && c <= '9') {
             buffer.append(c);
             state = State.FLOAT_LITERAL_EXPONENT;
         } else {
             errorAndReset("Exponent should have at least one digit");
+            initialState(c);
+        }
+    }
+
+    private void floatLiteralExponent(char c) {
+        if ((c >= '0' && c <= '9') || c == '_') {
+            buffer.append(c);
+        } else {
+            addAndReset(TokenType.FLOAT_LITERAL);
             initialState(c);
         }
     }
@@ -736,9 +735,10 @@ public final class Lexer {
     private void commentBlock(char c, TokenType type) {
         buffer.append(c);
 
-        if (c == '/' && buffer.charAt(buffer.length() - 2) == '*') {
+        if (c == '/' && buffer.charAt(buffer.length() - 2) == '*')
             onCommentBlockEnd(type);
-        }
+        else if (c == '*' && buffer.charAt(buffer.length() - 2) == '/')
+            state = State.COMMENT_BLOCK_START;
     }
 
     private void commentLineStart(char c) {
