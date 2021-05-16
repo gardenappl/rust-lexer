@@ -19,8 +19,13 @@ Options for output:
 * source code highlighting ✅ (using Jansi library)
 * tokens sorted by type
 
-### It works!
+## It works!
 
-![Strings and comments](test-strings.png)
+### Numbers and errors
 ![Numbers](test-numbers.png)
+
+### Strings and comments
+![Strings and comments](test-strings.png)
+
+### Firefox source code
 ![Firefox](firefox.png)
