@@ -2,14 +2,15 @@ package ua.yuriih.rustlexer;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
 public final class Lexer {
-    private final BufferedInputStream in;
+    private final InputStream in;
 
-    private final List<Token> tokens = new ArrayList<>();
+    private final ArrayList<Token> tokens = new ArrayList<>();
 
     private State state = State.INITIAL;
     private State.StringEscape stringEscapeState = State.StringEscape.NONE;
@@ -85,20 +86,13 @@ public final class Lexer {
     }
 
 
-    public Lexer(BufferedInputStream in) {
+    public Lexer(InputStream in) {
         this.in = in;
     }
 
-    public List<Token> parse() throws IOException {
+    public ArrayList<Token> parse() throws IOException {
         char c = 0;
         while (true) {
-            if (c == '\n') {
-                line++;
-                column = 0;
-            } else {
-                column++;
-            }
-
             int read = in.read();
             if (read < 0) {
                 //make sure to end with EOL
@@ -110,9 +104,9 @@ public final class Lexer {
                 c = (char) read;
             }
 
-            System.err.printf("%d:%d '%s' %s %s %d,%d %d(%s)\n", line, column, c, state,
-                    stringEscapeState, rawStringHashCount, rawStringEndHashCount,
-                    nestedCommentDepth, outerCommentState);
+//            System.err.printf("%d:%d '%s' %s %s %d,%d %d(%s)\n", line, column, c, state,
+//                    stringEscapeState, rawStringHashCount, rawStringEndHashCount,
+//                    nestedCommentDepth, outerCommentState);
 
             switch (state) {
                 case INITIAL -> initialState(c);
@@ -167,6 +161,13 @@ public final class Lexer {
                 case DOT_DOT -> dotDot(c);
                 case COLON -> colon(c);
             }
+
+            if (c == '\n') {
+                line++;
+                column = 0;
+            } else {
+                column++;
+            }
         }
     }
 
@@ -184,6 +185,11 @@ public final class Lexer {
         this.state = state;
         bufferStartLine = line;
         bufferStartColumn = column;
+    }
+
+    private void emptyFromCurrentPosAndReset(TokenType type) {
+        tokens.add(new Token(line, column, type));
+        state = State.INITIAL;
     }
 
     private void addEmptyAndReset(TokenType type) {
@@ -250,29 +256,29 @@ public final class Lexer {
         } else if (c == ':') {
             startBufferAndSet(c, State.COLON);
         } else if (c == '@') {
-            addEmptyAndReset(TokenType.AT);
+            emptyFromCurrentPosAndReset(TokenType.AT);
         } else if (c == ',') {
-            addEmptyAndReset(TokenType.COMMA);
+            emptyFromCurrentPosAndReset(TokenType.COMMA);
         } else if (c == ';') {
-            addEmptyAndReset(TokenType.SEMICOLON);
+            emptyFromCurrentPosAndReset(TokenType.SEMICOLON);
         } else if (c == '#') {
-            addEmptyAndReset(TokenType.POUND);
+            emptyFromCurrentPosAndReset(TokenType.POUND);
         } else if (c == '$') {
-            addEmptyAndReset(TokenType.DOLLAR);
+            emptyFromCurrentPosAndReset(TokenType.DOLLAR);
         } else if (c == '?') {
-            addEmptyAndReset(TokenType.QUESTION);
+            emptyFromCurrentPosAndReset(TokenType.QUESTION);
         } else if (c == '(') {
-            addEmptyAndReset(TokenType.PAREN_L);
+            emptyFromCurrentPosAndReset(TokenType.PAREN_L);
         } else if (c == ')') {
-            addEmptyAndReset(TokenType.PAREN_R);
+            emptyFromCurrentPosAndReset(TokenType.PAREN_R);
         } else if (c == '[') {
-            addEmptyAndReset(TokenType.SQUARE_L);
+            emptyFromCurrentPosAndReset(TokenType.SQUARE_L);
         } else if (c == ']') {
-            addEmptyAndReset(TokenType.SQUARE_R);
+            emptyFromCurrentPosAndReset(TokenType.SQUARE_R);
         } else if (c == '{') {
-            addEmptyAndReset(TokenType.CURLY_L);
+            emptyFromCurrentPosAndReset(TokenType.CURLY_L);
         } else if (c == '}') {
-            addEmptyAndReset(TokenType.CURLY_R);
+            emptyFromCurrentPosAndReset(TokenType.CURLY_R);
         } else if (!Character.isWhitespace(c)) {
             errorAndReset("Unexpected symbol: " + c);
         }
@@ -337,7 +343,7 @@ public final class Lexer {
             state = State.BYTE_STRING_LITERAL;
         } else if (c == 'r') {
             buffer.append(c);
-            state = State.RAW_STRING_LITERAL_START;
+            state = State.MAYBE_RAW_STRING;
         } else {
             state = State.ID_OR_KEYWORD_OR_SUFFIX;
             idOrKeywordOrSuffix(c);
@@ -530,7 +536,6 @@ public final class Lexer {
             rawStringEndHashCount++;
             buffer.append(c);
         } else {
-            rawStringHashCount = 0;
             rawStringEndHashCount = 0;
             state = State.RAW_STRING_LITERAL;
             buffer.append(c);
@@ -695,8 +700,9 @@ public final class Lexer {
         nestedCommentDepth++;
     }
 
-    private void onCommentBlockEnd(TokenType type) {
-        nestedCommentDepth--;
+    private void onCommentBlockEnd(TokenType type, boolean isNested) {
+        if (isNested)
+            nestedCommentDepth--;
         if (nestedCommentDepth == 0)
             addAndReset(type);
         else
@@ -725,7 +731,7 @@ public final class Lexer {
             state = State.COMMENT_BLOCK; /*** - too many asterisks */
             onCommentBlockStart();
         } else if (c == '/') {
-            onCommentBlockEnd(TokenType.COMMENT); /**/
+            onCommentBlockEnd(TokenType.COMMENT, false); /**/
         } else {
             state = State.COMMENT_BLOCK_OUTER_DOC;
             onCommentBlockStart();
@@ -736,7 +742,7 @@ public final class Lexer {
         buffer.append(c);
 
         if (c == '/' && buffer.charAt(buffer.length() - 2) == '*')
-            onCommentBlockEnd(type);
+            onCommentBlockEnd(type, true);
         else if (c == '*' && buffer.charAt(buffer.length() - 2) == '/')
             state = State.COMMENT_BLOCK_START;
     }
@@ -844,6 +850,8 @@ public final class Lexer {
     private void or(char c) {
         if (c == '=') {
             addEmptyAndReset(TokenType.OR_EQ);
+        } else if (c == '|') {
+            addEmptyAndReset(TokenType.OR_OR);
         } else {
             addEmptyAndReset(TokenType.OR);
             initialState(c);

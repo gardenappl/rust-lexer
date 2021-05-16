@@ -1,21 +1,35 @@
 package ua.yuriih.rustlexer;
 
+import org.fusesource.jansi.AnsiConsole;
+
 import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+
+import static org.fusesource.jansi.Ansi.ansi;
 
 public class Main {
     public static void main(String[] args) throws IOException {
-        FileInputStream inputStream = new FileInputStream(args[0]);
-        Lexer lexer = new Lexer(new BufferedInputStream(inputStream));
+        byte[] file = Files.readAllBytes(Path.of(args[0]));
+        ByteArrayInputStream stream = new ByteArrayInputStream(file);
+        Lexer lexer = new Lexer(stream);
 
-        List<Token> tokens = lexer.parse();
+        ArrayList<Token> tokens = lexer.parse();
+
+        AnsiConsole.out().print(ansi().fgRed());
         for (Token token : tokens) {
-            if (token.value != null)
-                System.out.printf("%d:%d\t%s\t%s\n", token.line, token.column, token.type, token.value);
-            else
-                System.out.printf("%d:%d\t%s\n", token.line, token.column, token.type);
+            if (token.type == TokenType.ERROR)
+                AnsiConsole.out().printf("%d:%d\t%s\t%s\n", token.line, token.column, token.type, token.value);
         }
+        AnsiConsole.out().print(ansi().reset());
+
+        stream.reset();
+        Highlighter highlighter = new Highlighter();
+        highlighter.printHighlighted(AnsiConsole.out(), stream, tokens);
     }
 }

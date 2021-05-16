@@ -1,3 +1,16 @@
+///Testing numeric literals
+
+static TEST_1: u64 = 14_44_14_44;
+static INVALID: i128 = _14_44;
+static TEST_2: u32 = 0b________1;
+static TEST_3: f32 = 123.0
+static TEST_4: f32 = 1.
+static TEST_5: f64 = 123.0
+static TEST_5: f64 = 123E+8;
+static TEST_6: f64 = 123.E-05;
+static INVALID_2: f64 = 123E8;
+static INVALID_3: f64 = 123E+___;
+
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,18 +25,6 @@ This is a port of Skia gamma LUT logic into Rust, used by WebRender.
 
 use api::ColorU;
 use std::cmp::max;
-
-/// TEST
-static TEST_1: u64 = 14_44_14_44;
-static INVALID: i128 = _14_44;
-static TEST_2: u32 = 0b________1;
-static TEST_3: f32 = 123.0
-static TEST_4: f32 = 1.
-static TEST_5: f64 = 123.0
-static TEST_5: f64 = 123E+8;
-static TEST_6: f64 = 123.E-05;
-static INVALID_2: f64 = 123E8;
-static INVALID_3: f64 = 123E+___;
 
 /// Color space responsible for converting between lumas and luminances.
 #[derive(Clone, Copy, Debug, PartialEq)]

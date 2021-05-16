@@ -54,8 +54,9 @@ pub struct Slice {
 /**** /*** /** */ /*! TEST INTEGERS */ */ /**/ */
 
 
-
-// invalidation reason CSS colors       /*! /** TEST STRINGS */ */
+                                          /*! /** TEST STRINGS */
+                                          */
+// invalidation reason CSS colors
 static CSS_FRACTIONAL_OFFSET: &str       = r##" TRICKY STRING gasd"#  #" \\n\n"\"g"##;
 static CSS_BACKGROUND_COLOR: &str        = b"Another tricky string \x9A";
 static CSS_SURFACE_OPACITY_CHANNEL: &str = br###"And the last tricky string "## "#" ###"# "###;

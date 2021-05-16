@@ -16,5 +16,11 @@ Following “tokens” should be considered:
 
 Options for output:
 * sequence of tokens
-* source code highlighting ✅
+* source code highlighting ✅ (using Jansi library)
 * tokens sorted by type
+
+### It works!
+
+[!test-strings.png](Test strings)
+[!test-numbers.png](Test numbers)
+[!firefox.png](Firefox)
