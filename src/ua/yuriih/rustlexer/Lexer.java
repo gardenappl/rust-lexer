@@ -1,11 +1,9 @@
 package ua.yuriih.rustlexer;
 
-import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 
 public final class Lexer {
     private final InputStream in;
@@ -116,8 +114,10 @@ public final class Lexer {
                 case MAYBE_BYTE_OR_BYTE_STRING -> maybeByteOrByteString(c);
                 case CHAR_LITERAL_OR_LIFETIME_OR_LABEL -> charLiteralOrLifetimeOrLabel(c);
                 case LIFETIME_OR_LABEL -> lifetimeOrLabel(c);
-                case STRING_LITERAL, CHAR_LITERAL -> stringOrCharOrByteLiteral(c, true, true);
-                case BYTE_LITERAL, BYTE_STRING_LITERAL -> stringOrCharOrByteLiteral(c, false, false);
+                case STRING_LITERAL, CHAR_LITERAL_ESCAPED -> stringOrCharOrByteLiteral(c, false);
+                case BYTE_LITERAL, BYTE_STRING_LITERAL -> stringOrCharOrByteLiteral(c, true);
+                case CHAR_LITERAL_END -> charLiteralEnd(c);
+                case BYTE_LITERAL_END -> byteLiteralEnd(c);
                 case RAW_STRING_LITERAL_START -> rawStringLiteralStart(c);
                 case RAW_STRING_LITERAL -> rawStringLiteral(c);
                 case RAW_STRING_LITERAL_MAYBE_END -> rawStringLiteralMaybeEnd(c);
@@ -208,6 +208,10 @@ public final class Lexer {
 
     private void errorAndReset(String errorMessage) {
         addAndReset(TokenType.ERROR, errorMessage);
+    }
+
+    private void errorAtBufferStart(String errorMessage) {
+        tokens.add(new Token(bufferStartLine, bufferStartColumn, TokenType.ERROR, errorMessage));
     }
 
     private void initialState(char c) {
@@ -360,7 +364,7 @@ public final class Lexer {
     private void charLiteralOrLifetimeOrLabel(char c) {
         if (c == '\\' && buffer.length() == 1) {
             buffer.append(c);
-            state = State.CHAR_LITERAL;
+            state = State.CHAR_LITERAL_ESCAPED;
             stringEscapeState = State.StringEscape.SLASH;
         } else if (c == '\'') {
             buffer.append(c);
@@ -372,8 +376,16 @@ public final class Lexer {
         } else if (buffer.length() == 1) {
             buffer.append(c);
         } else {
-            state = State.LIFETIME_OR_LABEL;
-            lifetimeOrLabel(c);
+            if (!isIdentifierChar(buffer.charAt(buffer.length() - 1))) {
+                buffer.append(c);
+                errorAndReset("Unexpected character in char literal, lifetime, or label: " + c);
+            } else if (!isIdentifierChar(c)) {
+                buffer.append(c);
+                errorAndReset("Unexpected character in char literal, lifetime, or label: " + c);
+            } else {
+                state = State.LIFETIME_OR_LABEL;
+                lifetimeOrLabel(c);
+            }
         }
     }
 
@@ -389,40 +401,47 @@ public final class Lexer {
                 addEmptyAndReset(TokenType.STATIC_LIFETIME);
             else
                 addAndReset(TokenType.LIFETIME);
+            initialState(c);
         }
     }
 
     private void stringOrCharOrByteLiteral(
             char c,
-            boolean isAscii,
-            boolean allowUnicodeEscape
+            boolean isByte
     ) {
         switch (stringEscapeState) {
-            case NONE -> escapeNone(c);
-            case SLASH -> escapeSlash(c, allowUnicodeEscape);
-            case ASCII_OR_BYTE -> escapeAsciiOrByte(c, isAscii);
+            case NONE -> escapeNone(c, isByte);
+            case SLASH -> escapeSlash(c, isByte);
+            case ASCII_OR_BYTE -> escapeAsciiOrByte(c, isByte);
             case UNICODE -> escapeUnicode(c);
         }
     }
 
-    private void escapeNone(char c) {
+    private void escapeNone(char c, boolean isByte) {
+        if (c >= 128 && isByte) {
+            errorAtBufferStart("Unexpected character in byte string: " + c);
+            return;
+        }
+
         buffer.append(c);
-        if (c == '\'') {
-            if (state == State.CHAR_LITERAL)
-                addAndReset(TokenType.CHAR_LITERAL);
-            else if (state == State.BYTE_LITERAL)
-                addAndReset(TokenType.BYTE_LITERAL);
-        } else if (c == '"') {
+
+        if (c == '"') {
             if (state == State.STRING_LITERAL)
                 addAndReset(TokenType.STRING_LITERAL);
             else if (state == State.BYTE_STRING_LITERAL)
                 addAndReset(TokenType.BYTE_STRING_LITERAL);
         } else if (c == '\\') {
             stringEscapeState = State.StringEscape.SLASH;
+        } else {
+            if (state == State.CHAR_LITERAL_ESCAPED) {
+                state = State.CHAR_LITERAL_END;
+            } else if (state == State.BYTE_LITERAL) {
+                state = State.BYTE_LITERAL_END;
+            }
         }
     }
 
-    private void escapeSlash(char c, boolean allowUnicodeEscape) {
+    private void escapeSlash(char c, boolean isByte) {
         buffer.append(c);
         switch (c) {
             case '\'', '"', 'n', 'r', 't', '\\', '0' -> {
@@ -432,44 +451,52 @@ public final class Lexer {
                 if (state == State.STRING_LITERAL) {
                     stringEscapeState = State.StringEscape.NONE;
                 } else {
-                    errorAndReset("Backslash before newline is only possible in string literals.");
+                    errorAtBufferStart("Backslash before newline is only possible in string literals.");
                 }
             }
             case 'x' -> {
                 stringEscapeState = State.StringEscape.ASCII_OR_BYTE;
             }
             case 'u' -> {
-                if (allowUnicodeEscape) {
-                    stringEscapeState = State.StringEscape.UNICODE;
-                } else {
-                    errorAndReset("Unicode escape sequences are not allowed in byte strings.");
+                if (isByte) {
+                    errorAtBufferStart("Unicode escape sequences are not allowed in byte strings.");
                     stringEscapeState = State.StringEscape.NONE;
+                } else {
+                    stringEscapeState = State.StringEscape.UNICODE;
                 }
             }
         }
     }
 
-    private void escapeAsciiOrByte(char c, boolean isAscii) {
+    private void escapeAsciiOrByte(char c, boolean isByte) {
         if (buffer.charAt(buffer.length() - 1) == 'x') {
             buffer.append(c);
-            if (!(c >= '0' && c <= '7') && isHexDigit(c)) {
-                if (isAscii) {
-                    errorAndReset("Unexpected " + c + " (ASCII escape sequence character code can't be higher than 7F)");
+            if (isHexDigit(c)) {
+                if (!(c >= '0' && c <= '7') && !isByte) {
+                    errorAtBufferStart("Unexpected " + c + " (ASCII escape sequence character code can't be higher than 7F)");
                     stringEscapeState = State.StringEscape.NONE;
                 }
             } else {
-                errorAndReset("Unexpected symbol in hex character code: " + c);
+                errorAtBufferStart("Unexpected symbol in hex character code: " + c);
                 stringEscapeState = State.StringEscape.NONE;
             }
         } else if (buffer.charAt(buffer.length() - 2) == 'x') {
             buffer.append(c);
             if (!isHexDigit(c)) {
-                errorAndReset("Unexpected symbol in hex character code: " + c);
+                errorAtBufferStart("Unexpected symbol in hex character code: " + c);
                 stringEscapeState = State.StringEscape.NONE;
             }
         } else {
             stringEscapeState = State.StringEscape.NONE;
-            escapeNone(c);
+            if (state == State.CHAR_LITERAL_ESCAPED) {
+                state = State.CHAR_LITERAL_END;
+                charLiteralEnd(c);
+            } else if (state == State.BYTE_LITERAL) {
+                state = State.BYTE_LITERAL_END;
+                byteLiteralEnd(c);
+            } else {
+                escapeNone(c, isByte);
+            }
         }
     }
 
@@ -477,7 +504,7 @@ public final class Lexer {
         buffer.append(c);
         if (buffer.charAt(buffer.length() - 2) == 'u') {
             if (c != '{') {
-                errorAndReset("Unicode escape sequence must start with {");
+                errorAtBufferStart("Unicode escape sequence must start with {");
                 stringEscapeState = State.StringEscape.NONE;
             }
         } else {
@@ -487,15 +514,33 @@ public final class Lexer {
 
             if (isHexDigit(c)) {
                 if (currentDigits + 1 > 6) {
-                    errorAndReset("Too many digits in Unicode escape sequence");
+                    errorAtBufferStart("Too many digits in Unicode escape sequence");
                     stringEscapeState = State.StringEscape.NONE;
                 }
             } else if (c == '}') {
                 stringEscapeState = State.StringEscape.NONE;
             } else {
-                errorAndReset("Unexpected symbol in Unicode hex character code: " + c);
+                errorAtBufferStart("Unexpected symbol in Unicode hex character code: " + c);
                 stringEscapeState = State.StringEscape.NONE;
             }
+        }
+    }
+
+    private void charLiteralEnd(char c) {
+        buffer.append(c);
+        if (c == '\'') {
+            addAndReset(TokenType.CHAR_LITERAL);
+        } else {
+            errorAtBufferStart("Did not expect more than one character in char literal");
+        }
+    }
+
+    private void byteLiteralEnd(char c) {
+        buffer.append(c);
+        if (c == '\'') {
+            addAndReset(TokenType.BYTE_LITERAL);
+        } else {
+            errorAtBufferStart("Did not expect more than one byte in byte literal");
         }
     }
 

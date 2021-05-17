@@ -53,13 +53,27 @@ pub struct Slice {
 
 /**** /*** /** */ /*! TEST COMMENTS */ */ /**/ */
 
-
-                                          /*! /** TEST STRINGS */
-                                          */
-// invalidation reason CSS colors
-static CSS_FRACTIONAL_OFFSET: &str       = r##" TRICKY STRING gasd"#  #" \\n\n"\"g"##;
-static CSS_BACKGROUND_COLOR: &str        = b"Another tricky string \x9A";
-static CSS_SURFACE_OPACITY_CHANNEL: &str = br###"And the last tricky string "## "#" ###"# "###;
+                      /*! /** TEST STRINGS */  */
+static TEST_1: &str = r##" TRICKY STRING gasd"#  #" \\n\n"\"g"##;
+static TEST_2: &str = "Another tricky привет string \x7F";
+static TEST_2: &str = "Multiline like \
+                       this is allowed";
+static TEST_3: &[u8; 41] = br###"And the last tricky string "## "#" ###"# "###;
+static TEST_4: &[u8; 49] = b"Byte string \xFF non-ASCII bytes are allowed here";
+static INVALID_!: &str = "Bad string \xFF non-ASCII byte escapes not allowed";
+static INVALID_2: &str = b"Bad byte string кириллица запрешена";
+static INVALID_3: &str = b"Bad string \u{FF} Unicode not allowed";
+static INVALID_4: &str = b"Bad string, multiline like \
+                           this is not allowed.";
+static TEST_5: u8 = b'-';
+static TEST_6: u8 = b'\x7F';
+static INVALID_5: u8 = b'\xFF';
+static TEST_7: char = '-';
+static TEST_8: char = '\x7F';
+static INVALID_5: u8 = '\x7F-';
+static INVALID_6: u8 = '-\x7F';
+static INVALID_7: u8 = b'\x7Fa';
+static INVALID_8: u8 = b'-\x7F';
 static CSS_NO_TEXTURE: &str              = "fill:#c04040;fill-opacity:0.1;";
 static CSS_NO_SURFACE: &str              = "fill:#40c040;fill-opacity:0.1;";
 static CSS_PRIM_COUNT: &str              = "fill:#40f0f0;fill-opacity:0.1;";
